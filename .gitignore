@@ -1,0 +1,11 @@
+auth_keys.json
+data/*
+tweet_ids.txt
+*.txt
+*.json
+*.backup
+*.old
+*.err
+*.log
+*.middle
+.ipynb_checkpoints/**/*
