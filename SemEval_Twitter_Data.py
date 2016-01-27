@@ -34,13 +34,38 @@ import pprint as pp
 import time
 import datetime
 import traceback
+import codecs
 
 # In[2]:
 
-# Load the authentication codes from the file
 authentication_file = "auth_keys.json"
-authentication_codes = json.load(open(authentication_file))
+TWEETS_TEXT_FILE = "TWEET_TEXT.txt"
+TWEETS_DATA_FILE = "TWEET_DATA.json"
+TWEETS_IDS_FILE = "tweet_ids.txt"
 
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--tweet_ids_file", help="Path to the tweet ids file. Should contain only 1 tweet per line.", default="tweet_ids.txt")
+    parser.add_argument("-a", "--auth-file", help="Path to the auth_keys.json file", default="auth_keys.json")
+    parser.add_argument("-t", "--text-file", help="Path to the file where to store tweet text only", default="TWEET_TEXT.txt")
+    parser.add_argument("-d", "--data-file", help="Path to the file where to store full tweet json data", default="TWEET_DATA.json")
+    args = parser.parse_args()
+    authentication_file = args.auth_file
+    TWEETS_TEXT_FILE = args.text_file
+    TWEETS_DATA_FILE = args.data_file
+    TWEETS_IDS_FILE = args.tweet_ids_file
+
+    print "Using the following parameters while loading data: "
+    print "authentication_file: %s" % authentication_file
+    print "TWEETS_TEXT_FILE: %s" % TWEETS_TEXT_FILE
+    print "TWEETS_DATA_FILE: %s" % TWEETS_DATA_FILE
+    print "TWEETS_IDS_FILE: %s" % TWEETS_IDS_FILE
+    print "Now starting processing..."
+    
+
+# Load the authentication codes from the file
+authentication_codes = json.load(open(authentication_file))
 
 # In[4]:
 
@@ -77,10 +102,6 @@ api = tpy.API(auth)
 
 # In[34]:
 
-TWEETS_TEXT_FILE = "TWEET_TEXT.txt"
-TWEETS_DATA_FILE = "TWEET_DATA.json"
-TWEETS_IDS_FILE = "tweet_ids.txt"
-
 try:
     tweets_data = json.load(open(TWEETS_DATA_FILE))
     # Save backup of old data:
@@ -92,7 +113,7 @@ except:
 
 total, existing, new_downloaded, not_available = 0, 0, 0, 0
 text = ""
-with open(TWEETS_IDS_FILE) as tid_fp, open(TWEETS_TEXT_FILE, "wb+") as ttxt_fp:
+with open(TWEETS_IDS_FILE) as tid_fp, codecs.open(TWEETS_TEXT_FILE, "wb+", "utf-8") as ttxt_fp:
     for i, tid in enumerate(tid_fp.readlines()):
         if (i % 50) == 0:
             print "Finished reading %s lines. Next TID: %s" % (i, tid)
@@ -101,6 +122,7 @@ with open(TWEETS_IDS_FILE) as tid_fp, open(TWEETS_TEXT_FILE, "wb+") as ttxt_fp:
             text = tweets_data[tid]["text"].replace("\n", " ").replace("\r", " ")
             existing += 1
             total += 1
+        connection_tries = 0 # To fix intermittent connections
         while tid not in tweets_data:
             try:
                 print "Trying to download: %s, %s" % (i, tid)
@@ -133,6 +155,18 @@ with open(TWEETS_IDS_FILE) as tid_fp, open(TWEETS_TEXT_FILE, "wb+") as ttxt_fp:
                     tweets_data[tid] = {"text": text}
                     not_available += 1
                     total += 1
+                elif "Failed to send request: HTTPSConnectionPool" in e.__str__():
+                    if connection_tries < 10:
+                        connection_tries += 1
+                        now = datetime.datetime.today()
+                        seconds = 1000
+                        future = now + datetime.timedelta(seconds=seconds)
+                        print "Network connection issues. Trying to reconnect % time, after %s seconds at %s" % (connection_tries, seconds, future)
+                        time.sleep(seconds)
+                        print "Awake. Trying to reconnect for the %s time using tid = %s" % (connection_tries, tid)
+                    else:
+                        print "Tried reconnecting %s times. Aborting. Follow stack trace: \n", (connection_tries, traceback.format_exc())
+                        raise
                 else:
                     print "Encountered some other error. Follow stack trace:\n", traceback.format_exc()
                     raise
@@ -140,7 +174,7 @@ with open(TWEETS_IDS_FILE) as tid_fp, open(TWEETS_TEXT_FILE, "wb+") as ttxt_fp:
                 print "Encountered some other error. Follow stack trace:\n", traceback.format_exc()
                 raise
         print "Writng to %s to text file %s." % (tid, TWEETS_TEXT_FILE)
-        print >> ttxt_fp, "%s\t%s" % (tid, text)
+        print >> ttxt_fp, '%s\t%s' % (tid, text)
         if new_downloaded % 100 == 0 and new_downloaded > 1:
             print "Finished downloading %s tweets. Total: %s, Existing: %s, Not Available: %s" % (new_downloaded, total, existing, not_available)
 
